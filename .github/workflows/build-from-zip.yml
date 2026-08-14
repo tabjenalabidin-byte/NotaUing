@@ -28,42 +28,76 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Cari ZIP proyek
+      - name: Ekstrak semua ZIP
         run: |
+          rm -rf extracted
+          mkdir extracted
+
+          echo "Mencari ZIP..."
+
           ZIP_FILE=$(find . -type f -iname "*.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ZIP proyek tidak ditemukan!"
+            echo "ZIP tidak ditemukan!"
             exit 1
           fi
 
-          echo "ZIP ditemukan: $ZIP_FILE"
+          echo "ZIP utama: $ZIP_FILE"
 
-          mkdir -p extracted
           unzip -o "$ZIP_FILE" -d extracted
 
-      - name: Cari folder proyek Android
+          echo "Mencari ZIP di dalam ZIP..."
+
+          INNER_ZIP=$(find extracted -type f -iname "*.zip" | head -n 1)
+
+          if [ -n "$INNER_ZIP" ]; then
+            echo "ZIP kedua ditemukan: $INNER_ZIP"
+
+            mkdir -p project
+            unzip -o "$INNER_ZIP" -d project
+          else
+            echo "Tidak ada ZIP kedua."
+            cp -r extracted/* project/ 2>/dev/null || true
+          fi
+
+          echo "Isi proyek:"
+          find project -maxdepth 4 -type f | sort | head -200
+
+      - name: Cari proyek Android
         run: |
-          SETTINGS=$(find extracted -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          SETTINGS=$(find project \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -type f | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "settings.gradle tidak ditemukan!"
-            echo "Isi folder:"
-            find extracted -maxdepth 4 -type f | head -100
+            echo "Struktur file:"
+            find project -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
           echo "Proyek Android ditemukan:"
           echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Build APK
         run: |
           cd "$PROJECT_DIR"
+
+          echo "Menjalankan Gradle..."
+
           gradle assembleDebug --no-daemon
+
+      - name: Cari APK
+        run: |
+          echo "APK yang dihasilkan:"
+          find "$PROJECT_DIR" \
+            -type f \
+            -iname "*.apk" \
+            -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

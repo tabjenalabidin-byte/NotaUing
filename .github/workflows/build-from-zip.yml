@@ -23,45 +23,47 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Cari dan ekstrak ZIP proyek
-        run: |
-          mkdir -p extracted
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+      - name: Cari ZIP proyek
+        run: |
+          ZIP_FILE=$(find . -type f -iname "*.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ZIP proyek tidak ditemukan."
+            echo "ZIP proyek tidak ditemukan!"
             exit 1
           fi
 
           echo "ZIP ditemukan: $ZIP_FILE"
+
+          mkdir -p extracted
           unzip -o "$ZIP_FILE" -d extracted
 
-      - name: Tentukan folder proyek Android
+      - name: Cari folder proyek Android
         run: |
-          if [ -f "settings.gradle" ]; then
-            echo "PROJECT_DIR=." >> $GITHUB_ENV
-          elif [ -f "extracted/settings.gradle" ]; then
-            echo "PROJECT_DIR=extracted" >> $GITHUB_ENV
-          else
-            PROJECT=$(find extracted -name settings.gradle -type f | head -n 1 | xargs -r dirname)
+          SETTINGS=$(find extracted -name settings.gradle -o -name settings.gradle.kts | head -n 1)
 
-            if [ -z "$PROJECT" ]; then
-              echo "settings.gradle tidak ditemukan."
-              exit 1
-            fi
-
-            echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle tidak ditemukan!"
+            echo "Isi folder:"
+            find extracted -maxdepth 4 -type f | head -100
+            exit 1
           fi
 
-      - name: Beri izin Gradle
-        run: |
-          chmod +x "$PROJECT_DIR/gradlew"
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Proyek Android ditemukan:"
+          echo "$PROJECT_DIR"
 
       - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          ./gradlew assembleDebug --no-daemon
+          cd "$PROJECT_DIR"
+          gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

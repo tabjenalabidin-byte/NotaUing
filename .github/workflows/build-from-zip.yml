@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -28,47 +28,68 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Ekstrak ZIP proyek
+      - name: Ekstrak proyek dari ZIP
         shell: bash
         run: |
           set -e
 
+          rm -rf extracted
           mkdir -p extracted
-
-          echo "=== Mencari ZIP ==="
 
           ZIP=$(find . \
             -path './.git' -prune -o \
             -type f -iname '*.zip' -print | head -n 1)
 
-          if [ -n "$ZIP" ]; then
-            echo "ZIP ditemukan: $ZIP"
-            unzip -o "$ZIP" -d extracted
-          else
-            echo "Tidak ada ZIP. Menggunakan file repository langsung."
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: ZIP proyek tidak ditemukan."
+            exit 1
           fi
 
-          echo "=== Mencari settings.gradle ==="
+          echo "ZIP proyek: $ZIP"
 
-          SETTINGS=$(find . \
-            -path './.git' -prune -o \
+          unzip -o "$ZIP" -d extracted
+
+          echo "=== Isi hasil ekstraksi ==="
+          find extracted -maxdepth 4 -type f | sort
+
+      - name: Tentukan proyek Android
+        shell: bash
+        run: |
+          set -e
+
+          # Prioritaskan proyek yang baru diekstrak dari ZIP
+          SETTINGS=$(find extracted \
             \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
-            -type f -print | head -n 1)
+            -type f | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle tidak ditemukan!"
-            echo ""
-            echo "=== Struktur repository ==="
-            find . -maxdepth 5 -type f | sort
+            echo "ERROR: settings.gradle tidak ditemukan di dalam ZIP."
+            find extracted -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Proyek Android ditemukan:"
+          echo "Proyek Android:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Periksa modul Android
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== Struktur proyek ==="
+          find "$PROJECT_DIR" -maxdepth 4 -type f | sort
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle tidak ditemukan."
+            exit 1
+          fi
+
+          echo "Modul app ditemukan."
 
       - name: Build APK
         shell: bash
@@ -77,19 +98,18 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "=== Isi proyek ==="
-          ls -la
+          echo "=== Gradle tasks ==="
+          gradle tasks --all
 
-          echo "=== Build APK ==="
-
-          gradle assembleDebug --no-daemon
+          echo "=== Build APK Debug ==="
+          gradle :app:assembleDebug --no-daemon
 
       - name: Cari APK
         shell: bash
         run: |
-          echo "=== APK hasil build ==="
+          echo "=== APK ==="
 
-          find "$PROJECT_DIR" \
+          find "$PROJECT_DIR/app/build/outputs" \
             -type f \
             -name '*.apk' \
             -print
@@ -99,4 +119,4 @@ jobs:
         with:
           name: BukuNota-APK
           path: |
-            **/app/build/outputs/apk/debug/*.apk
+            extracted/**/app/build/outputs/apk/debug/*.apk

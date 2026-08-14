@@ -1,1 +1,71 @@
+name: Build APK Buku Nota
 
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cari dan ekstrak ZIP proyek
+        run: |
+          mkdir -p extracted
+
+          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ZIP proyek tidak ditemukan."
+            exit 1
+          fi
+
+          echo "ZIP ditemukan: $ZIP_FILE"
+          unzip -o "$ZIP_FILE" -d extracted
+
+      - name: Tentukan folder proyek Android
+        run: |
+          if [ -f "settings.gradle" ]; then
+            echo "PROJECT_DIR=." >> $GITHUB_ENV
+          elif [ -f "extracted/settings.gradle" ]; then
+            echo "PROJECT_DIR=extracted" >> $GITHUB_ENV
+          else
+            PROJECT=$(find extracted -name settings.gradle -type f | head -n 1 | xargs -r dirname)
+
+            if [ -z "$PROJECT" ]; then
+              echo "settings.gradle tidak ditemukan."
+              exit 1
+            fi
+
+            echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
+          fi
+
+      - name: Beri izin Gradle
+        run: |
+          chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BukuNota-APK
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
